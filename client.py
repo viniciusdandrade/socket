@@ -5,12 +5,13 @@ import math
 HOST = "localhost"
 PORT = 5000
 
-# configurações de handshake
 modes = ["em_rajada", "individual"]
 client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 client.connect((HOST, PORT))
 
-# seleção de modo
+def calcular_checksum(payload):
+    return sum(ord(c) for c in payload)
+
 while True:
     try:
         mode_code = int(input(
@@ -26,7 +27,6 @@ while True:
     except ValueError:
         print("\nEntrada inválida! Digite um número\n")
 
-# seleção de tamanho máximo
 while True:
     try:
         max_length = int(input("Digite o tamanho máximo da mensagem (Máx 3): "))
@@ -37,29 +37,29 @@ while True:
     except ValueError:
         print("\nEntrada inválida! Digite um número\n")
 
-# envio de handshake
 handshakeMessage = f"{mode};{max_length}"
 client.send(handshakeMessage.encode())
 print(f"[CLIENTE] Handshake enviado: modo={mode}, tamanho máximo={max_length}")
 
-# recepção de confirmação
 confirmation = client.recv(1024).decode()
 print(f"[CLIENTE] Confirmação recebida do servidor: {confirmation}")
 
-# leitura da mensagem a enviar
 texto = input("Digite a mensagem a ser enviada: ")
 
-# fragmentação em pacotes com número de sequência
+print("\n")
+
 num_packets = math.ceil(len(texto) / max_length)
 for seq in range(num_packets):
     start = seq * max_length
     payload = texto[start:start + max_length]
-    packet = f"{seq}|{payload}"
+    checksum = calcular_checksum(payload)
+    packet = f"{seq}|{payload}|{checksum}"
     client.send(packet.encode())
     print(f"[CLIENTE] Pacote enviado: {packet}")
 
-    # espera ACK
     ack = client.recv(1024).decode()
     print(f"[CLIENTE] ACK recebido: {ack}")
+
+    print("\n")
 
 client.close()
