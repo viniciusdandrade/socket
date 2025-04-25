@@ -15,7 +15,6 @@ client.settimeout(TIMEOUT)
 def calcular_checksum(payload):
     return sum(ord(c) for c in payload)
 
-
 tipo = None
 while True:
     try:
@@ -45,7 +44,6 @@ while True:
 
 window_size = 4  
 
-
 data = f"{tipo};{max_length};{window_size}\n"
 client.send(data.encode())
 print(f"[CLIENTE] Handshake enviado: modo={tipo}, max_length={max_length}, janela={window_size}")
@@ -54,7 +52,6 @@ print(f"[CLIENTE] Confirmação recebida: {confirmation}\n")
 
 texto = input("Digite a mensagem a ser enviada: ")
 num_packets = math.ceil(len(texto) / max_length)
-
 
 base = 0
 next_seq = 0
@@ -68,18 +65,17 @@ while base < num_packets:
         start = next_seq * max_length
         payload = texto[start:start + max_length]
         checksum = calcular_checksum(payload)
-        packet = f"{next_seq}|{payload}|{checksum}\n"
+        packet = f"seq={next_seq}|data={payload}|sum={checksum}\n"
         client.send(packet.encode())
         print(f"[CLIENTE] Pacote enviado: {packet.strip()}")
         if base == next_seq:
             timer_start = time.time()
         next_seq += 1
 
-    
     try:
         data = client.recv(1024).decode()
         for ack_msg in data.splitlines():
-            print(f"[CLIENTE] ACK recebido bruto: {ack_msg}")
+            print(f"[CLIENTE] ACK recebido: {ack_msg}")
             acks = re.findall(r'ACK\|(\d+)', ack_msg)
             if not acks:
                 print(f"[CLIENTE] Formato de ACK inválido: {ack_msg}")

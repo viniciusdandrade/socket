@@ -13,9 +13,7 @@ print(f"[SERVIDOR] Conectado a {addr}")
 def calcular_checksum(payload):
     return sum(ord(c) for c in payload)
 
-
 buffer = ""
-
 
 while "\n" not in buffer:
     data = conn.recv(1024).decode()
@@ -33,7 +31,6 @@ conn.send("HANDSHAKE_OK\n".encode())
 expected_seq = 0
 received = {}
 
-
 while True:
     data = conn.recv(1024).decode()
     if not data:
@@ -43,9 +40,15 @@ while True:
     while "\n" in buffer:
         line, buffer = buffer.split("\n", 1)
         try:
-            seq_str, payload, checksum_str = line.split("|", 2)
-            seq = int(seq_str)
-            checksum_recv = int(checksum_str)
+            parts = line.strip().split("|")
+            data_dict = {}
+            for part in parts:
+                key, value = part.split("=", 1)
+                data_dict[key] = value
+
+            seq = int(data_dict["seq"])
+            payload = data_dict["data"]
+            checksum_recv = int(data_dict["sum"])
         except ValueError:
             print(f"[SERVIDOR] Pacote mal formado: {line}")
             continue
@@ -54,7 +57,6 @@ while True:
             print(f"[SERVIDOR] Checksum inválido seq={seq}")
             continue
 
-        
         if seq < expected_seq or seq >= expected_seq + window_size:
             ack = f"ACK|{expected_seq}\n" if mode == "em_rajada" else f"ACK|{seq}\n"
             conn.send(ack.encode())
@@ -71,7 +73,6 @@ while True:
 
         conn.send(ack.encode())
         print(f"[SERVIDOR] Enviado {ack.strip()}")
-
 
 txt = ''.join(received[i] for i in sorted(received))
 print(f"[SERVIDOR] Mensagem completa: '{txt}'")
