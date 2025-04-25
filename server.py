@@ -1,4 +1,3 @@
-# servidor.py
 import socket
 
 HOST = "localhost"
@@ -7,67 +6,75 @@ PORT = 5000
 server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server.bind((HOST, PORT))
 server.listen(1)
-
-def calcular_checksum(payload):
-    return sum(ord(c) for c in payload)
-
 print(f"[SERVIDOR] Aguardando conexão na porta {PORT}...")
 conn, addr = server.accept()
 print(f"[SERVIDOR] Conectado a {addr}")
 
-data = conn.recv(1024).decode()
-mode, max_length = data.split(";")
-max_length = int(max_length)
-print(f"[SERVIDOR] Handshake recebido:")
-print(f"  ➤ Modo de operação: {mode}")
-print(f"  ➤ Tamanho máximo da carga útil: {max_length} caracteres")
+def calcular_checksum(payload):
+    return sum(ord(c) for c in payload)
 
-conn.send("HANDSHAKE_OK".encode())
 
-print("\n")
+buffer = ""
+
+
+while "\n" not in buffer:
+    data = conn.recv(1024).decode()
+    if not data:
+        break
+    buffer += data
+
+header, buffer = buffer.split("\n", 1)
+mode, max_len_str, window_str = header.split(";")
+max_length = int(max_len_str)
+window_size = int(window_str)
+print(f"[SERVIDOR] Handshake: modo={mode}, max_payload={max_length}, janela={window_size}")
+conn.send("HANDSHAKE_OK\n".encode())
 
 expected_seq = 0
 received = {}
 
+
 while True:
-    try:
-        packet = conn.recv(1024).decode()
-        if not packet:
-            break
-    except ConnectionResetError:
+    data = conn.recv(1024).decode()
+    if not data:
         break
+    buffer += data
+    
+    while "\n" in buffer:
+        line, buffer = buffer.split("\n", 1)
+        try:
+            seq_str, payload, checksum_str = line.split("|", 2)
+            seq = int(seq_str)
+            checksum_recv = int(checksum_str)
+        except ValueError:
+            print(f"[SERVIDOR] Pacote mal formado: {line}")
+            continue
 
-    try:
-        seq_str, payload, checksum_str = packet.split("|", 2)
-    except ValueError:
-        print(f"[SERVIDOR] Erro no formato do pacote. Ignorando.")
-        continue
+        if checksum_recv != calcular_checksum(payload):
+            print(f"[SERVIDOR] Checksum inválido seq={seq}")
+            continue
 
-    seq = int(seq_str)
-    checksum_recebido = int(checksum_str)
-    checksum_calculado = calcular_checksum(payload)
+        
+        if seq < expected_seq or seq >= expected_seq + window_size:
+            ack = f"ACK|{expected_seq}\n" if mode == "em_rajada" else f"ACK|{seq}\n"
+            conn.send(ack.encode())
+            continue
 
-    if checksum_recebido != checksum_calculado:
-        print(f"[SERVIDOR] Erro de checksum no pacote seq={seq}. Ignorando pacote.")
-        continue
-
-    print(f"[SERVIDOR] Pacote válido: seq={seq}, payload='{payload}', checksum={checksum_recebido}")
-
-    if mode == "individual":
         received[seq] = payload
-        ack = f"ACK|{seq}"
-    else:
-        if seq == expected_seq:
-            received[seq] = payload
-            expected_seq += 1
-        ack = f"ACK|{expected_seq}"
+        if mode == "individual":
+            ack = f"ACK|{seq}\n"
+        else:
+            if seq == expected_seq:
+                while expected_seq in received:
+                    expected_seq += 1
+            ack = f"ACK|{expected_seq}\n"
 
-    conn.send(ack.encode())
-    print(f"[SERVIDOR] Enviou { 'ACK individual' if mode=='individual' else 'ACK cumulativo' }: {ack}")
+        conn.send(ack.encode())
+        print(f"[SERVIDOR] Enviado {ack.strip()}")
 
-    print("\n")
 
-mensagem = "".join(received[i] for i in sorted(received))
-print(f"[SERVIDOR] Mensagem reconstruída: '{mensagem}'")
-
+txt = ''.join(received[i] for i in sorted(received))
+print(f"[SERVIDOR] Mensagem completa: '{txt}'")
 conn.close()
+server.close()
+print("[SERVIDOR] Conexão encerrada.")
