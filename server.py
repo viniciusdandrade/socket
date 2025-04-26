@@ -1,7 +1,36 @@
 import socket
+import time
 
 HOST = "localhost"
 PORT = 5000
+
+while True:
+    try:
+        mode_code = int(input(
+            "Digite [1] para simular perda de pacote\n"
+            "Digite [2] para continuar normalmente\n"
+            "Digite: "
+        ))
+        if mode_code not in [1, 2]:
+            print("\nDigite apenas [1] ou [2]\n")
+        else:
+            if mode_code == 1:
+                perderPacote = True
+
+                while True:
+                    try:
+                        pacotePerdido = int(input(
+                            "Digite o número do pacote que será perdido: "
+                        ))
+                        break
+                    except ValueError:
+                        print("\nEntrada inválida! Digite um número\n")
+            else:
+                pacotePerdido = None
+                perderPacote = False
+            break
+    except ValueError:
+        print("\nEntrada inválida! Digite um número\n")
 
 server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server.bind((HOST, PORT))
@@ -25,7 +54,7 @@ header, buffer = buffer.split("\n", 1)
 mode, max_len_str, window_str = header.split(";")
 max_length = int(max_len_str)
 window_size = int(window_str)
-print(f"[SERVIDOR] Handshake: modo={mode}, max_payload={max_length}, janela={window_size}")
+print(f"[SERVIDOR] Handshake: modo={mode}, max_payload={max_length}, janela={window_size}\n")
 conn.send("HANDSHAKE_OK\n".encode())
 
 expected_seq = 0
@@ -47,6 +76,9 @@ while True:
                 data_dict[key] = value
 
             seq = int(data_dict["seq"])
+            if seq == pacotePerdido and perderPacote:
+                perderPacote = False
+                continue
             payload = data_dict["data"]
             checksum_recv = int(data_dict["sum"])
         except ValueError:
@@ -56,6 +88,12 @@ while True:
         if checksum_recv != calcular_checksum(payload):
             print(f"[SERVIDOR] Checksum inválido seq={seq}")
             continue
+
+        print(f"[SERVIDOR] Pacote recebido {line}")
+        print(f"[SERVIDOR] Checksum válido {line} ✅")
+        if seq in received.keys():
+                print(f"[SERVIDOR] Pacote repetido\n")
+                continue
 
         if seq < expected_seq or seq >= expected_seq + window_size:
             ack = f"ACK|{expected_seq}\n" if mode == "em_rajada" else f"ACK|{seq}\n"
@@ -71,11 +109,12 @@ while True:
                     expected_seq += 1
             ack = f"ACK|{expected_seq}\n"
 
+        window_size += 1
         conn.send(ack.encode())
-        print(f"[SERVIDOR] Enviado {ack.strip()}")
+        print(f"[SERVIDOR] Enviado {ack.strip()}\n")
 
 txt = ''.join(received[i] for i in sorted(received))
 print(f"[SERVIDOR] Mensagem completa: '{txt}'")
 conn.close()
 server.close()
-print("[SERVIDOR] Conexão encerrada.")
+print("\n[SERVIDOR] Conexão encerrada.")
