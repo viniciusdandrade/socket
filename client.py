@@ -89,8 +89,9 @@ while not finished and len(acksRecebidos) < num_packets:
 
             print(f"[CLIENTE] ACK recebido: {ack_msg}")
             ack_value = int(ack_msg.split("|")[1])  
+            print(f"[CLIENTE] Tempo de Resposta: {tempo_execucao:.4f}s ✅\n")
     
-            if tipo == "em_rajada" and ack_value == num_packets + 1:
+            if tipo == "em_rajada" and ack_value == num_packets :
                 finished = True
                 break
 
@@ -103,7 +104,6 @@ while not finished and len(acksRecebidos) < num_packets:
             else:
                 acksRecebidos.append(ack_value)
 
-            print(f"[CLIENTE] Tempo de Resposta: {tempo_execucao:.4f}s ✅\n")
             acks = re.findall(r'ACK\|(\d+)', ack_msg)
             if not acks:
                 print(f"[CLIENTE] Formato de ACK inválido: {ack_msg}")
