@@ -4,7 +4,7 @@ import time
 import re  
 
 HOST = "localhost"
-PORT = 5000
+PORT = 5002
 TIMEOUT = 1
 
 modes = ["em_rajada", "individual"]
@@ -61,13 +61,19 @@ timer_start = None
 
 acksRecebidos = []
 
-while len(acksRecebidos) < num_packets:
+finished = False
+
+while not finished and len(acksRecebidos) < num_packets:
     
     while next_seq < num_packets and next_seq < base + window_size:
         start = next_seq * max_length
         payload = texto[start:start + max_length]
         checksum = calcular_checksum(payload)
-        packet = f"seq={next_seq}|data={payload}|sum={checksum}\n"
+        if next_seq + 1 == num_packets and tipo == "em_rajada":
+            packet = f"seq={next_seq}|data={payload}|sum={checksum}&\n"
+        else:
+            packet = f"seq={next_seq}|data={payload}|sum={checksum}\n"
+
         client.send(packet.encode())
         inicio = time.time()
         print(f"[CLIENTE] Pacote enviado: {packet.strip()}\n")
@@ -80,14 +86,18 @@ while len(acksRecebidos) < num_packets:
         for ack_msg in data.splitlines():
             fim = time.time()
             tempo_execucao = fim - inicio
+
             print(f"[CLIENTE] ACK recebido: {ack_msg}")
             ack_value = int(ack_msg.split("|")[1])  
+    
+            if tipo == "em_rajada" and ack_value == num_packets + 1:
+                finished = True
+                break
 
             if tipo == "em_rajada":
                 if ack_value not in acksRecebidos:
                     if not acksRecebidos or max(acksRecebidos) < ack_value:
-                        for i in range(max(acksRecebidos, default=0), ack_value):
-                            acksRecebidos.append(i)
+                        acksRecebidos.append(ack_value)
                     else:
                         acksRecebidos.append(ack_value)
             else:
@@ -110,6 +120,8 @@ while len(acksRecebidos) < num_packets:
             if base != next_seq:
                 timer_start = time.time()
     except socket.timeout:
+        if finished:
+            break
         print(f"[CLIENTE] Timeout. Reenviando janela base={base}")
         for seq in range(base, min(base + window_size, num_packets)):
             if tipo == "individual" and acked[seq]:

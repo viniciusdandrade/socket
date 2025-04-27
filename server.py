@@ -2,7 +2,7 @@ import socket
 import time
 
 HOST = "localhost"
-PORT = 5000
+PORT = 5002
 
 while True:
     try:
@@ -69,6 +69,12 @@ while True:
     while "\n" in buffer:
         line, buffer = buffer.split("\n", 1)
         try:
+            if "&" in line:
+                lastPacket = True
+                line = line.replace("&", "")
+            else:
+                lastPacket = False
+
             parts = line.strip().split("|")
             data_dict = {}
             for part in parts:
@@ -103,15 +109,17 @@ while True:
         received[seq] = payload
         if mode == "individual":
             ack = f"ACK|{seq}\n"
+            window_size += 1
+            conn.send(ack.encode())
         else:
             if seq == expected_seq:
                 while expected_seq in received:
                     expected_seq += 1
-            ack = f"ACK|{expected_seq}\n"
-
-        window_size += 1
-        conn.send(ack.encode())
-        print(f"[SERVIDOR] Enviado {ack.strip()}\n")
+            if lastPacket:
+                ack = f"ACK|{expected_seq}\n"
+                window_size += 1
+                conn.send(ack.encode())
+                print(f"[SERVIDOR] Enviado {ack.strip()}\n")
 
 txt = ''.join(received[i] for i in sorted(received))
 print(f"[SERVIDOR] Mensagem completa: '{txt}'")
