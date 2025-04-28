@@ -2,7 +2,7 @@ import socket
 import time
 
 HOST = "localhost"
-PORT = 5002
+PORT = 5051
 
 while True:
     try:
@@ -108,15 +108,16 @@ while True:
 
         received[seq] = payload
         if mode == "individual":
-            ack = f"ACK|{seq}\n"
+            ack = f"ACK|{seq}|[{abs(4-window_size)}-{window_size-1}]\n"
             window_size += 1
             conn.send(ack.encode())
+            print(f"[SERVIDOR] Enviado {ack.strip()}\n")
         else:
             if seq == expected_seq:
                 while expected_seq in received:
                     expected_seq += 1
             if lastPacket:
-                ack = f"ACK|{expected_seq}\n"
+                ack = f"ACK|{expected_seq}|[{abs(4-window_size)}-{window_size-1}]\n"
                 window_size += 1
                 conn.send(ack.encode())
                 print(f"[SERVIDOR] Enviado {ack.strip()}\n")

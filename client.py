@@ -4,7 +4,7 @@ import time
 import re  
 
 HOST = "localhost"
-PORT = 5002
+PORT = 5051
 TIMEOUT = 1
 
 modes = ["em_rajada", "individual"]
@@ -87,6 +87,7 @@ while not finished and len(acksRecebidos) < num_packets:
             fim = time.time()
             tempo_execucao = fim - inicio
 
+            window_size += 1
             print(f"[CLIENTE] ACK recebido: {ack_msg}")
             ack_value = int(ack_msg.split("|")[1])  
             print(f"[CLIENTE] Tempo de Resposta: {tempo_execucao:.4f}s ✅\n")
