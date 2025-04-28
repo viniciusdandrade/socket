@@ -2,7 +2,7 @@ import socket
 import time
 
 HOST = "localhost"
-PORT = 5051
+PORT = 5065
 
 while True:
     try:
@@ -121,6 +121,11 @@ while True:
                 window_size += 1
                 conn.send(ack.encode())
                 print(f"[SERVIDOR] Enviado {ack.strip()}\n")
+            else:
+                if window_size <= len(received):
+                    ack = f"NACK|{expected_seq}|[{abs(4-window_size)}-{window_size-1}]\n"
+                    conn.send(ack.encode())
+                    print(f"[SERVIDOR] Enviado {ack.strip()}\n")
 
 txt = ''.join(received[i] for i in sorted(received))
 print(f"[SERVIDOR] Mensagem completa: '{txt}'")

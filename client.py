@@ -4,7 +4,7 @@ import time
 import re  
 
 HOST = "localhost"
-PORT = 5051
+PORT = 5065
 TIMEOUT = 1
 
 modes = ["em_rajada", "individual"]
@@ -87,39 +87,45 @@ while not finished and len(acksRecebidos) < num_packets:
             fim = time.time()
             tempo_execucao = fim - inicio
 
-            window_size += 1
-            print(f"[CLIENTE] ACK recebido: {ack_msg}")
-            ack_value = int(ack_msg.split("|")[1])  
-            print(f"[CLIENTE] Tempo de Resposta: {tempo_execucao:.4f}s ✅\n")
-    
-            if tipo == "em_rajada" and ack_value == num_packets :
+            if ack_msg.startswith("ACK"):
+                window_size += 1
+                print(f"[CLIENTE] ACK recebido: {ack_msg} ✅")
+                ack_value = int(ack_msg.split("|")[1])  
+                print(f"[CLIENTE] Tempo de Resposta: {tempo_execucao:.4f}s ⏰\n")
+
+                if tipo == "em_rajada" and ack_value == num_packets:
+                    finished = True
+                    break
+
+                if tipo == "em_rajada":
+                    if ack_value not in acksRecebidos:
+                        if not acksRecebidos or max(acksRecebidos) < ack_value:
+                            acksRecebidos.append(ack_value)
+                        else:
+                            acksRecebidos.append(ack_value)
+                else:
+                    acksRecebidos.append(ack_value)
+
+                acks = re.findall(r'ACK\|(\d+)', ack_msg)
+                if not acks:
+                    print(f"[CLIENTE] Formato de ACK inválido: {ack_msg}")
+                    continue
+                ack_seq = int(acks[-1])
+
+                if tipo == "individual":
+                    acked[ack_seq] = True
+                    while base < num_packets and acked[base]:
+                        base += 1
+                else:
+                    base = ack_seq
+
+                if base != next_seq:
+                    timer_start = time.time()
+            else:
+                print(f"[CLIENTE] NACK recebido: {ack_msg} ❌")
+                print(f"[CLIENTE] Servidor congestionado")
                 finished = True
-                break
 
-            if tipo == "em_rajada":
-                if ack_value not in acksRecebidos:
-                    if not acksRecebidos or max(acksRecebidos) < ack_value:
-                        acksRecebidos.append(ack_value)
-                    else:
-                        acksRecebidos.append(ack_value)
-            else:
-                acksRecebidos.append(ack_value)
-
-            acks = re.findall(r'ACK\|(\d+)', ack_msg)
-            if not acks:
-                print(f"[CLIENTE] Formato de ACK inválido: {ack_msg}")
-                continue
-            ack_seq = int(acks[-1])
-
-            if tipo == "individual":
-                acked[ack_seq] = True
-                while base < num_packets and acked[base]:
-                    base += 1
-            else:
-                base = ack_seq
-
-            if base != next_seq:
-                timer_start = time.time()
     except socket.timeout:
         if finished:
             break
