@@ -3,35 +3,34 @@ import socket
 HOST = "localhost"
 PORT = 5065
 
-# Escolha do tipo de simulação
-perderPacote = False
-falharPacote = False
-pacotePerdido = None
-pacoteFalho = None
+# Simulação de falhas
+pacotes_perdidos = []
+pacotes_falhos = []
 erros = []
 
+# Menu de simulação
 while True:
     try:
         print("Simulação de falhas:")
-        print("[1] Simular perda de pacote")
-        print("[2] Simular falha de pacote (checksum inválido)")
+        print("[1] Simular perda de pacotes")
+        print("[2] Simular falha de pacotes (checksum inválido)")
         print("[3] Continuar normalmente")
         escolha = int(input("Digite: "))
 
         if escolha == 1:
-            perderPacote = True
-            pacotePerdido = int(input("Digite o número do pacote que será perdido: "))
+            entrada = input("Digite os números dos pacotes que serão perdidos (separados por vírgula): ")
+            pacotes_perdidos = list(map(int, entrada.strip().split(",")))
             break
         elif escolha == 2:
-            falharPacote = True
-            pacoteFalho = int(input("Digite o número do pacote que terá falha no checksum: "))
+            entrada = input("Digite os números dos pacotes com falha de checksum (separados por vírgula): ")
+            pacotes_falhos = list(map(int, entrada.strip().split(",")))
             break
         elif escolha == 3:
             break
         else:
             print("\nDigite apenas [1], [2] ou [3]\n")
     except ValueError:
-        print("\nEntrada inválida! Digite um número\n")
+        print("\nEntrada inválida! Digite os números corretamente.\n")
 
 # Criação do servidor
 server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -88,43 +87,33 @@ while True:
                 parts = line.strip().split("|")
                 data_dict = {key: value for key, value in (p.split("=", 1) for p in parts)}
                 seq = int(data_dict["seq"])
-                if seq==pacotePerdido and seq not in erros:
-                    perderPacote = True
-                if seq==pacoteFalho and seq not in erros:
-                    falharPacote = True
-             
                 payload = data_dict["data"]
                 checksum_recv = int(data_dict["sum"])
 
                 # Simular perda
-                if seq == pacotePerdido and perderPacote:
-                    erros.append(seq)
+                if seq in pacotes_perdidos and seq not in erros:
                     print(f"[SERVIDOR] Simulando perda do pacote {seq}")
-                    perderPacote = False
+                    erros.append(seq)
                     continue
 
                 # Simular falha
-                if seq == pacoteFalho and falharPacote:
-                    erros.append(seq)
+                if seq in pacotes_falhos and seq not in erros:
                     print(f"[SERVIDOR] Simulando falha no pacote {seq}")
                     checksum_recv = -1
-                    falharPacote = False
+                    erros.append(seq)
 
                 # Checksum inválido
                 if checksum_recv != calcular_checksum(payload):
                     print(f"[SERVIDOR] Pacote corrompido (checksum inválido) seq={seq}")
-                    
                     if mode == "em_rajada":
                         if seq == expected_seq:
                             nack = f"NACK|{expected_seq}|[{abs(4 - window_size)}-{window_size - 1}]@\n"
                             conn.send(nack.encode())
                             print(f"[SERVIDOR] Enviado {nack.strip()} ❌ (pacote corrompido)\n")
-                    
                     elif mode == "individual":
                         nack = f"NACK|{seq}|[{abs(4 - window_size)}-{window_size - 1}]@\n"
                         conn.send(nack.encode())
                         print(f"[SERVIDOR] Enviado {nack.strip()} ❌ (pacote corrompido)\n")
-                    
                     continue
 
                 # Pacote repetido
