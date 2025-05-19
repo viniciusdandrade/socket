@@ -78,25 +78,29 @@ while True:
 
         buffer += data
 
-        while "\n" in buffer:
+        # Processa linhas completas
+        while "\n" in buffer and not mensagem_finalizada:
             line, buffer = buffer.split("\n", 1)
+            # Aborta mensagem corrente
+            if line.strip() == "ENDMSG":
+                print("[SERVIDOR] Mensagem abortada pelo cliente.")
+                mensagem_finalizada = True
+                break
+
             try:
                 lastPacket = "&" in line
                 line = line.replace("&", "")
-
                 parts = line.strip().split("|")
                 data_dict = {key: value for key, value in (p.split("=", 1) for p in parts)}
                 seq = int(data_dict["seq"])
                 payload = data_dict["data"]
                 checksum_recv = int(data_dict["sum"])
 
-                # Simular perda
+                # Simulação de perda/falha
                 if seq in pacotes_perdidos and seq not in erros:
                     print(f"[SERVIDOR] Simulando perda do pacote {seq}")
                     erros.append(seq)
                     continue
-
-                # Simular falha
                 if seq in pacotes_falhos and seq not in erros:
                     print(f"[SERVIDOR] Simulando falha no pacote {seq}")
                     checksum_recv = -1
@@ -105,15 +109,9 @@ while True:
                 # Checksum inválido
                 if checksum_recv != calcular_checksum(payload):
                     print(f"[SERVIDOR] Pacote corrompido (checksum inválido) seq={seq}")
-                    if mode == "em_rajada":
-                        if seq == expected_seq:
-                            nack = f"NACK|{expected_seq}|[{abs(4 - window_size)}-{window_size - 1}]@\n"
-                            conn.send(nack.encode())
-                            print(f"[SERVIDOR] Enviado {nack.strip()} ❌ (pacote corrompido)\n")
-                    elif mode == "individual":
-                        nack = f"NACK|{seq}|[{abs(4 - window_size)}-{window_size - 1}]@\n"
-                        conn.send(nack.encode())
-                        print(f"[SERVIDOR] Enviado {nack.strip()} ❌ (pacote corrompido)\n")
+                    nack = f"NACK|{seq}|[{abs(4 - window_size)}-{window_size - 1}]@\n"
+                    conn.send(nack.encode())
+                    print(f"[SERVIDOR] Enviado {nack.strip()} ❌ (pacote corrompido)\n")
                     continue
 
                 # Pacote repetido
@@ -121,67 +119,46 @@ while True:
                     print(f"[SERVIDOR] Pacote repetido seq={seq}\n")
                     continue
 
-                # Fora de ordem no Go-Back-N
+                # Ordem em Go-Back-N
                 if mode == "em_rajada" and seq != expected_seq:
                     print(f"[SERVIDOR] Ignorando pacote fora de ordem: seq={seq}, esperado={expected_seq}")
-                    continue
-
-                # Fora de janela no modo individual
-                if mode == "individual" and (seq < expected_seq or seq >= expected_seq + window_size):
-                    ack = f"ACK|{seq}\n"
-                    conn.send(ack.encode())
                     continue
 
                 print(f"[SERVIDOR] Pacote recebido {line}")
                 print(f"[SERVIDOR] Checksum válido {line} ✅")
                 received[seq] = payload
+                if lastPacket:
+                    last_packet_seq = seq
 
+                # Envia ACK/NACK
                 if mode == "individual":
                     ack = f"ACK|{seq}|[{abs(4 - window_size)}-{window_size - 1}]\n"
-                    window_size += 1
                     conn.send(ack.encode())
                     print(f"[SERVIDOR] Enviado {ack.strip()}\n")
-
                     if seq == expected_seq:
                         while expected_seq in received:
                             expected_seq += 1
-
-                    if lastPacket:
-                        last_packet_seq = seq
-
-                    if last_packet_seq is not None:
-                        if all(i in received for i in range(last_packet_seq + 1)):
-                            mensagem_finalizada = True
-
-                else:  # em_rajada
+                    if last_packet_seq is not None and all(i in received for i in range(last_packet_seq + 1)):
+                        mensagem_finalizada = True
+                else:
                     if seq == expected_seq:
                         while expected_seq in received:
                             expected_seq += 1
-
-                    if lastPacket:
+                    if last_packet_seq is not None and all(i in received for i in range(last_packet_seq + 1)):
                         ack = f"ACK|{expected_seq}|[{abs(4 - window_size)}-{window_size - 1}]\n"
-                        window_size += 1
                         conn.send(ack.encode())
                         print(f"[SERVIDOR] Enviado {ack.strip()}\n")
                         mensagem_finalizada = True
-                    else:
-                        if window_size <= len(received):
-                            nack = f"NACK|{expected_seq}|[{abs(4 - window_size)}-{window_size - 1}]\n"
-                            conn.send(nack.encode())
-                            print(f"[SERVIDOR] Enviado {nack.strip()} ❌ (janela cheia)\n")
-                            expected_seq = 0
-                            buffer = ""
-                            mensagem_finalizada = False
-                            break
 
             except Exception as e:
                 print(f"[SERVIDOR] Erro ao processar pacote: {e}")
                 continue
 
-    txt = ''.join(received[i] for i in sorted(received))
-    print(f"[SERVIDOR] Mensagem completa: '{txt}'\n")
-
-    # Reset para próxima mensagem
+    # Mostra ou descarta a mensagem atual
+    if received:
+        txt = ''.join(received[i] for i in sorted(received))
+        print(f"[SERVIDOR] Mensagem completa: '{txt}'\n")
+    # Reseta estado para próxima mensagem
     erros.clear()
     expected_seq = 0
     received.clear()

@@ -1,7 +1,6 @@
 import socket
 import math
 import time
-import re
 
 HOST = "localhost"
 PORT = 5065
@@ -32,6 +31,7 @@ while True:
     except ValueError:
         print("\nEntrada inválida! Digite um número\n")
 
+# Tamanho máximo
 while True:
     try:
         max_length = int(input("Digite o tamanho máximo da mensagem (Máx 3): "))
@@ -43,8 +43,7 @@ while True:
         print("\nEntrada inválida! Digite um número\n")
 
 window_size = 4
-
-# Envio do handshake
+# Handshake inicial
 data = f"{tipo};{max_length};{window_size}\n"
 client.send(data.encode())
 print(f"[CLIENTE] Handshake enviado: modo={tipo}, max_length={max_length}, janela={window_size}")
@@ -64,17 +63,19 @@ while True:
     acked = [False] * num_packets
     timer_start = None
     finished = False
+    timeout_attempts = 0
 
-    while not finished:
-        # Envia pacotes dentro da janela
+    # Tenta enviar até 3 timeouts
+    while not finished and timeout_attempts < 3:
+        # Envio de pacotes na janela
         while next_seq < num_packets and next_seq < base + window_size:
             start = next_seq * max_length
             payload = texto[start:start + max_length]
             checksum = calcular_checksum(payload)
+            packet = f"seq={next_seq}|data={payload}|sum={checksum}"
             if next_seq + 1 == num_packets:
-                packet = f"seq={next_seq}|data={payload}|sum={checksum}&\n"
-            else:
-                packet = f"seq={next_seq}|data={payload}|sum={checksum}\n"
+                packet += "&"
+            packet += "\n"
 
             client.send(packet.encode())
             print(f"[CLIENTE] Pacote enviado: {packet.strip()}")
@@ -86,52 +87,53 @@ while True:
             data = client.recv(1024).decode()
             for ack_msg in data.splitlines():
                 if ack_msg.startswith("ACK"):
+                    timeout_attempts = 0
                     fim = time.time()
-                    tempo_execucao = fim - timer_start
                     print(f"[CLIENTE] ACK recebido: {ack_msg} ✅")
-                    print(f"[CLIENTE] Tempo de Resposta: {tempo_execucao:.4f}s ⏰\n")
+                    print(f"[CLIENTE] Tempo de Resposta: {(fim - timer_start):.4f}s ⏰\n")
 
                     parts = ack_msg.split("|")
-                    if len(parts) >= 2:
-                        ack_seq = int(parts[1])
-
+                    ack_seq = int(parts[1]) if len(parts) > 1 else None
+                    if ack_seq is not None:
                         if tipo == "em_rajada":
                             for i in range(base, ack_seq):
                                 acked[i] = True
                             base = ack_seq
-                            if base == num_packets:
-                                finished = True
-                                break
                         else:
                             acked[ack_seq] = True
                             while base < num_packets and acked[base]:
                                 base += 1
-                            if base == num_packets:
-                                finished = True
-                                break
-                else:
-                    if not ack_msg.endswith("@"):
-                        print(f"[CLIENTE] NACK recebido: {ack_msg} ❌")
-                        print(f"[CLIENTE] Servidor congestionado")
-                        finished = True
-                    else:
-                        print(f"[CLIENTE] NACK recebido: {ack_msg.replace("@","")} ❌")
+
+                        if all(acked):
+                            finished = True
+                            break
+                elif ack_msg.startswith("NACK"):
+                    print(f"[CLIENTE] NACK recebido: {ack_msg.replace('@','')} ❌")
 
         except socket.timeout:
-            print(f"[CLIENTE] Timeout. Reenviando janela base={base}")
+            timeout_attempts += 1
+            if timeout_attempts >= 3:
+                print(f"[CLIENTE] Número máximo de timeouts ({timeout_attempts}) atingido.")
+                # Aborta mensagem para resetar no servidor
+                client.send("ENDMSG\n".encode())
+                break
+
+            print(f"[CLIENTE] Timeout. Reenviando janela base={base} (tentativa {timeout_attempts}/3)")
             for seq in range(base, min(base + window_size, num_packets)):
                 if tipo == "individual" and acked[seq]:
                     continue
                 start = seq * max_length
                 payload = texto[start:start + max_length]
                 checksum = calcular_checksum(payload)
-                packet = f"seq={seq}|data={payload}|sum={checksum}\n"
+                packet = f"seq={seq}|data={payload}|sum={checksum}"
                 if seq + 1 == num_packets:
-                    packet = packet.replace("\n", "&\n")
+                    packet += "&"
+                packet += "\n"
                 client.send(packet.encode())
                 print(f"[CLIENTE] Reenviado: {packet.strip()}")
-            print("\n")
             timer_start = time.time()
+
+# Ao sair do loop de envio, recomeça para nova mensagem
 
 client.close()
 print("[CLIENTE] Conexão encerrada.")
